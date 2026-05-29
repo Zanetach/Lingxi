@@ -1,6 +1,6 @@
 {
   "name": "lingxi",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Lingxi sidebar AI image generation for Obsidian notes.",
   "main": "main.js",
   "scripts": {

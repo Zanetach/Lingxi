@@ -6,7 +6,7 @@ on:
       - "*"
 
 env:
-  PLUGIN_NAME: banana-studio
+  PLUGIN_NAME: lingxi
 
 jobs:
   build:

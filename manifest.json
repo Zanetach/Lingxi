@@ -1,9 +1,9 @@
 {
-  "id": "lingxi",
-  "name": "Lingxi",
-  "version": "0.3.2",
-  "minAppVersion": "1.8.0",
-  "description": "Sidebar AI image generation for notes: generate, choose, and insert.",
-  "author": "Zane",
-  "isDesktopOnly": false
+    "id": "lingxi",
+    "name": "Lingxi",
+    "version": "0.3.3",
+    "minAppVersion": "1.8.0",
+    "description": "Sidebar AI image generation for notes: generate, choose, and insert.",
+    "author": "Zane",
+    "isDesktopOnly": false
 }
