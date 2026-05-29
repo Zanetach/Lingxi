@@ -13,6 +13,8 @@ export function formatProviderName(provider: string): string {
       return "OpenAI";
     case "gemini":
       return "Gemini";
+    case "codex":
+      return "Codex CLI";
     default:
       return provider.charAt(0).toUpperCase() + provider.slice(1);
   }

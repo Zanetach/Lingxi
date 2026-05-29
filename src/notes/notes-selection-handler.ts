@@ -3,7 +3,15 @@
  * 仅为 Sidebar 生图提供选区上下文、生成、插入与清理能力
  */
 
-import { App, Editor, MarkdownView, Notice, TFile } from "obsidian";
+import {
+  App,
+  Editor,
+  FileSystemAdapter,
+  MarkdownView,
+  Notice,
+  TFile,
+  TFolder,
+} from "obsidian";
 import type CanvasAIPlugin from "../../main";
 import { SelectionContext } from "./types";
 import { extractDocumentImages, saveImageToVault } from "../utils/image-utils";
@@ -61,15 +69,15 @@ export class NotesSelectionHandler {
     return leaf ? (leaf.view as MarkdownView) : null;
   }
 
-  private createImageApiManager(): ApiManager {
+  private async createImageApiManager(file: TFile): Promise<ApiManager> {
     const selectedModel = this.plugin.settings.paletteImageModel || "";
     if (!selectedModel) {
-      return new ApiManager(this.plugin.settings);
+      return new ApiManager(await this.prepareImageSettings(this.plugin.settings.apiProvider, file));
     }
 
     const [provider, modelId] = selectedModel.split("|");
     if (!provider || !modelId) {
-      return new ApiManager(this.plugin.settings);
+      return new ApiManager(await this.prepareImageSettings(this.plugin.settings.apiProvider, file));
     }
 
     const localSettings = {
@@ -83,7 +91,70 @@ export class NotesSelectionHandler {
     } else if (provider === "gemini") {
       localSettings.geminiImageModel = modelId;
     }
-    return new ApiManager(localSettings);
+    return new ApiManager(await this.prepareImageSettings(provider as ApiProvider, file, localSettings));
+  }
+
+  private async prepareImageSettings(
+    provider: ApiProvider,
+    file: TFile,
+    baseSettings = this.plugin.settings,
+  ): Promise<typeof this.plugin.settings> {
+    const localSettings = { ...baseSettings };
+    if (provider !== "codex" || localSettings.codexWorkingDir.trim()) {
+      return localSettings;
+    }
+
+    const workingDir = await this.ensureDefaultCodexWorkingDir(file);
+    if (workingDir) {
+      localSettings.codexWorkingDir = workingDir;
+    }
+    return localSettings;
+  }
+
+  private async ensureDefaultCodexWorkingDir(file: TFile): Promise<string> {
+    const adapter = this.app.vault.adapter;
+    if (!(adapter instanceof FileSystemAdapter)) return "";
+
+    const folder = this.normalizeFolderPath(
+      this.plugin.settings.imageSaveFolder || "Assets/AI",
+      file,
+    );
+    if (folder) {
+      await this.ensureFolderExists(folder);
+    }
+    const vaultRoot = adapter.getBasePath().replace(/\/+$/, "");
+    return folder ? `${vaultRoot}/${folder}` : vaultRoot;
+  }
+
+  private normalizeFolderPath(rawPath: string, file: TFile): string {
+    const trimmed = rawPath.trim();
+    if (!trimmed || trimmed === "/") {
+      return file.parent?.path || "";
+    }
+    return trimmed.replace(/^\/+/, "").replace(/\/+$/, "");
+  }
+
+  private async ensureFolderExists(folderPath: string): Promise<void> {
+    const normalized = folderPath.replace(/^\/+/, "").replace(/\/+$/, "");
+    if (!normalized) return;
+
+    const existing = this.app.vault.getAbstractFileByPath(normalized);
+    if (existing instanceof TFolder) return;
+    if (existing && !(existing instanceof TFolder)) {
+      throw new Error(`保存路径冲突：${normalized} 已存在且不是文件夹`);
+    }
+
+    const segments = normalized.split("/").filter(Boolean);
+    let current = "";
+    for (const segment of segments) {
+      current = current ? `${current}/${segment}` : segment;
+      const node = this.app.vault.getAbstractFileByPath(current);
+      if (node instanceof TFolder) continue;
+      if (node && !(node instanceof TFolder)) {
+        throw new Error(`保存路径冲突：${current} 已存在且不是文件夹`);
+      }
+      await this.app.vault.createFolder(current);
+    }
   }
 
   private buildSelectionContext(
@@ -217,7 +288,7 @@ export class NotesSelectionHandler {
       aspectRatio: this.plugin.settings.defaultAspectRatio || "1:1",
     };
 
-    const localApiManager = this.createImageApiManager();
+    const localApiManager = await this.createImageApiManager(file);
 
     let instruction = prompt;
     if (!instruction && selectedText) {
@@ -336,7 +407,7 @@ export class NotesSelectionHandler {
     const normalized = filePath.replace(/^\/+/, "");
     const abstract = this.app.vault.getAbstractFileByPath(normalized);
     if (abstract instanceof TFile) {
-      await this.app.vault.delete(abstract);
+      await this.app.fileManager.trashFile(abstract);
     }
   }
 

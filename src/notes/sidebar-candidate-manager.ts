@@ -1,41 +1,13 @@
-import { App, Notice, TFile } from "obsidian";
+import { Notice } from "obsidian";
 import type CanvasAIPlugin from "../../main";
 import type { GeneratedImageCandidate } from "./note-image-task-manager";
-import { ReferenceImagePreviewModal } from "./sidebar-modals";
-
-export type CandidateStatus = "pending" | "ready" | "inserted" | "discarded";
-
-export interface SidebarInputImage {
-  base64: string;
-  mimeType: string;
-  role: "reference";
-  fileName: string;
-  sourcePath?: string;
-}
-
-export interface SidebarImageCandidate extends GeneratedImageCandidate {
-  status: CandidateStatus;
-  sessionId: number;
-  sequence: number;
-  sourcePrompt: string;
-  sourceContext: unknown | null;
-  sourceInputImages: SidebarInputImage[];
-}
-
-export interface FailedGenerationTask {
-  id: string;
-  prompt: string;
-  context: unknown | null;
-  inputImages: SidebarInputImage[];
-  errorMessage: string;
-  createdAt: number;
-}
-
-export interface SidebarCandidateCallbacks {
-  updateButtons: () => void;
-  getPendingTaskCount: () => number;
-  onRegenerateCandidate: (candidateId: string) => Promise<void>;
-}
+import { SidebarCandidateRenderer } from "./sidebar-candidate-renderer";
+import type {
+  FailedGenerationTask,
+  SidebarCandidateCallbacks,
+  SidebarImageCandidate,
+  SidebarInputImage,
+} from "./sidebar-candidate-types";
 
 export class SidebarCandidateManager {
   public imageCandidates: SidebarImageCandidate[] = [];
@@ -53,7 +25,7 @@ export class SidebarCandidateManager {
   private readonly candidateVirtualOverscanRows = 2;
 
   private readonly plugin: CanvasAIPlugin;
-  private readonly app: App;
+  private readonly renderer: SidebarCandidateRenderer;
   private readonly candidateListEl: HTMLElement;
   private readonly messagesContainer: HTMLElement;
   private readonly tr: (zh: string, en: string) => string;
@@ -67,11 +39,20 @@ export class SidebarCandidateManager {
     callbacks: SidebarCandidateCallbacks,
   ) {
     this.plugin = plugin;
-    this.app = plugin.app;
     this.candidateListEl = candidateListEl;
     this.messagesContainer = messagesContainer;
     this.tr = tr;
     this.callbacks = callbacks;
+    this.renderer = new SidebarCandidateRenderer(plugin.app, tr, {
+      isBulkInserting: () => this.isBulkInserting,
+      onInsert: (candidateId) => this.handleInsertCandidate(candidateId),
+      onRegenerate: (candidateId) =>
+        this.callbacks.onRegenerateCandidate(candidateId),
+      onCopyPrompt: (candidateId) =>
+        this.handleCopyCandidatePrompt(candidateId),
+      onDiscard: (candidateId) => this.handleDiscardCandidate(candidateId),
+      onCopyEmbed: (candidateId) => this.handleCopyCandidateEmbed(candidateId),
+    });
   }
 
   public addMessage(role: "user" | "assistant", content: string): void {
@@ -260,7 +241,7 @@ export class SidebarCandidateManager {
     this.imageCandidates
       .slice(startIndex, endIndex)
       .forEach((candidate) =>
-        this.renderCandidateCard(this.candidateListEl, candidate),
+        this.renderer.renderCandidateCard(this.candidateListEl, candidate),
       );
 
     if (bottomPad > 0) {
@@ -268,150 +249,6 @@ export class SidebarCandidateManager {
         "sidebar-image-candidate-spacer",
       );
       bottomSpacer.style.height = `${bottomPad}px`;
-    }
-  }
-
-  private renderCandidateCard(
-    parent: HTMLElement,
-    candidate: SidebarImageCandidate,
-  ): void {
-    const card = parent.createDiv("sidebar-image-candidate-card");
-    const previewSrc = this.getCandidatePreviewSrc(candidate);
-    const preview = card.createDiv("sidebar-image-candidate-preview");
-
-    const statusText =
-      candidate.status === "pending"
-        ? this.tr("生成中", "Generating")
-        : candidate.status === "ready"
-          ? this.tr("待插入", "Ready")
-          : this.tr("已插入", "Inserted");
-    preview.createDiv({
-      cls: `sidebar-image-candidate-status status-${candidate.status}`,
-      text: statusText,
-    });
-
-    if (candidate.status === "pending") {
-      preview.createDiv({ cls: "sidebar-candidate-progress-bar" });
-    }
-
-    const actions = preview.createDiv(
-      "sidebar-image-candidate-actions-overlay",
-    );
-    const insertBtn = actions.createEl("button", {
-      cls: "mod-cta candidate-btn-insert",
-      text: this.tr("插入", "Insert"),
-    });
-    const regenerateBtn = actions.createEl("button", {
-      cls: "candidate-btn-regenerate",
-      text: this.tr("重生", "Regenerate"),
-    });
-    const discardBtn = actions.createEl("button", {
-      cls: "candidate-btn-discard",
-      text: this.tr("丢弃", "Discard"),
-    });
-    const copyPathBtn = actions.createEl("button", {
-      cls: "candidate-btn-copy",
-      text: this.tr("复制嵌入", "Copy Embed"),
-    });
-
-    if (previewSrc) {
-      const img = preview.createEl("img", {
-        attr: { src: previewSrc, alt: candidate.fileName },
-      });
-      img.loading = "lazy";
-      preview.addClass("is-clickable");
-      preview.setAttr(
-        "title",
-        this.tr(
-          "悬停或点击显示操作；双击查看大图",
-          "Hover/click to show actions; double-click to preview",
-        ),
-      );
-      preview.addEventListener("click", () => {
-        card.toggleClass("is-actions-visible", true);
-      });
-      preview.addEventListener("dblclick", () => {
-        this.openCandidatePreviewModal(candidate, previewSrc);
-      });
-    } else {
-      preview.createDiv({
-        cls: "sidebar-image-candidate-preview-empty",
-        text: this.tr("图片预览不可用", "Preview unavailable"),
-      });
-      card.addClass("is-actions-visible");
-    }
-
-    const canInsertSingle =
-      candidate.status === "ready" && !this.isBulkInserting;
-    const canOperateCompletedCandidate =
-      (candidate.status === "ready" || candidate.status === "inserted") &&
-      !this.isBulkInserting;
-    const canCopyEmbed = canOperateCompletedCandidate && !!candidate.filePath;
-    insertBtn.disabled = !canInsertSingle;
-    regenerateBtn.disabled = !canOperateCompletedCandidate;
-    discardBtn.disabled = !canOperateCompletedCandidate;
-    copyPathBtn.disabled = !canCopyEmbed;
-
-    const markVisible = (): void => card.addClass("is-actions-visible");
-    [insertBtn, regenerateBtn, discardBtn, copyPathBtn].forEach((btn) => {
-      btn.addEventListener("click", (event) => {
-        event.stopPropagation();
-        markVisible();
-      });
-    });
-
-    insertBtn.addEventListener("click", () => {
-      void this.handleInsertCandidate(candidate.taskId);
-    });
-    regenerateBtn.addEventListener("click", () => {
-      void this.callbacks.onRegenerateCandidate(candidate.taskId);
-    });
-    discardBtn.addEventListener("click", () => {
-      void this.handleDiscardCandidate(candidate.taskId);
-    });
-    copyPathBtn.addEventListener("click", () => {
-      void this.handleCopyCandidateEmbed(candidate.taskId);
-    });
-  }
-
-  private openCandidatePreviewModal(
-    candidate: SidebarImageCandidate,
-    previewSrc: string,
-  ): void {
-    const modal = new ReferenceImagePreviewModal(
-      this.app,
-      previewSrc,
-      candidate.fileName,
-      {
-        downloadText: this.tr("下载图片到本地", "Download Image"),
-        insertText: this.tr("插入到笔记", "Insert into Note"),
-        onDownload: () => this.downloadCandidateImage(candidate, previewSrc),
-        onInsert: () => {
-          void this.handleInsertCandidate(candidate.taskId);
-        },
-      },
-    );
-    modal.open();
-  }
-
-  private downloadCandidateImage(
-    candidate: SidebarImageCandidate,
-    previewSrc: string,
-  ): void {
-    try {
-      const link = document.createElement("a");
-      link.href = previewSrc;
-      link.download = candidate.fileName || `ai-generated-${Date.now()}.png`;
-      link.rel = "noopener";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      new Notice(this.tr("已开始下载图片", "Image download started"));
-    } catch (error) {
-      console.error("Sidebar CoPilot: failed to download candidate image", error);
-      new Notice(
-        this.tr("下载失败，请重试", "Download failed. Please retry."),
-      );
     }
   }
 
@@ -484,6 +321,30 @@ export class SidebarCandidateManager {
       const embed = `![[${normalized}]]`;
       await navigator.clipboard.writeText(embed);
       new Notice(this.tr("已复制嵌入语法", "Copied embed syntax"));
+    } catch {
+      new Notice(
+        this.tr(
+          "复制失败，请检查系统剪贴板权限",
+          "Copy failed. Please check clipboard permissions.",
+        ),
+      );
+    }
+  }
+
+  private async handleCopyCandidatePrompt(candidateId: string): Promise<void> {
+    const candidate = this.imageCandidates.find(
+      (c) => c.taskId === candidateId,
+    );
+    if (!candidate) return;
+    const prompt = candidate.sourcePrompt.trim();
+    if (!prompt) {
+      new Notice(this.tr("该候选图没有提示词", "No prompt for this candidate"));
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(prompt);
+      new Notice(this.tr("已复制提示词", "Copied prompt"));
     } catch {
       new Notice(
         this.tr(
@@ -587,31 +448,7 @@ export class SidebarCandidateManager {
     }
   }
 
-  public getCandidatePreviewSrc(
-    candidate: SidebarImageCandidate,
-  ): string | null {
-    if (candidate.imageDataUrl) {
-      return candidate.imageDataUrl;
-    }
-    const filePath = candidate.filePath || "";
-    if (!filePath) return null;
-    try {
-      const normalized = filePath.replace(/^\/+/, "");
-      const fromAdapter = this.app.vault.adapter.getResourcePath(normalized);
-      if (fromAdapter) {
-        return fromAdapter;
-      }
-    } catch (error) {
-      console.warn(
-        "Sidebar CoPilot: failed to resolve preview via adapter",
-        error,
-      );
-    }
-
-    const abstract = this.app.vault.getAbstractFileByPath(filePath);
-    if (!(abstract instanceof TFile)) {
-      return null;
-    }
-    return this.app.vault.getResourcePath(abstract);
+  public getCandidatePreviewSrc(candidate: SidebarImageCandidate): string | null {
+    return this.renderer.getCandidatePreviewSrc(candidate);
   }
 }

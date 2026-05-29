@@ -275,12 +275,13 @@ export class PresetEditorModal extends Modal {
     promptInput.addClass("canvas-ai-modal-prompt-input");
 
     const autoResizePromptInput = (): void => {
-      promptInput.style.height = "auto";
+      promptInput.setCssProps({ height: "auto" });
       const maxHeight = 360;
       const nextHeight = Math.min(promptInput.scrollHeight, maxHeight);
-      promptInput.style.height = `${nextHeight}px`;
-      promptInput.style.overflowY =
-        promptInput.scrollHeight > maxHeight ? "auto" : "hidden";
+      promptInput.setCssProps({
+        height: `${nextHeight}px`,
+        "overflow-y": promptInput.scrollHeight > maxHeight ? "auto" : "hidden",
+      });
     };
 
     const applySelectedPreset = (id: string): void => {

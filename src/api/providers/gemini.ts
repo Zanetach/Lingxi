@@ -8,7 +8,6 @@ import type { CanvasAISettings } from "../../settings/settings";
 import type {
   GeminiRequest,
   GeminiResponse,
-  GeminiPart,
   GeminiContent,
 } from "../types";
 import {
@@ -17,6 +16,11 @@ import {
   createAbortSignalWithTimeout,
   isAbortError,
 } from "../utils";
+import {
+  extractTextAndThinkingFromResponse,
+  extractTextFromResponse,
+  parseGeminiImageResponse,
+} from "./gemini-response";
 
 export class GeminiProvider {
   private settings: CanvasAISettings;
@@ -93,7 +97,7 @@ export class GeminiProvider {
     }
 
     console.debug(
-      `AIris: [${this.providerName}] Sending chat request...`,
+      `Lingxi: [${this.providerName}] Sending chat request...`,
     );
 
     const requestParams: RequestUrlParam = {
@@ -106,7 +110,7 @@ export class GeminiProvider {
     try {
       const response = await requestUrl(requestParams);
       const data = response.json as GeminiResponse;
-      return this.extractTextFromResponse(data);
+      return extractTextFromResponse(data);
     } catch (error: unknown) {
       this.handleError(error);
     }
@@ -170,7 +174,7 @@ export class GeminiProvider {
     }
 
     console.debug(
-      `AIris: [${this.providerName}] Sending image generation request...`,
+      `Lingxi: [${this.providerName}] Sending image generation request...`,
     );
 
     const model = this.getImageModel();
@@ -179,7 +183,7 @@ export class GeminiProvider {
     try {
       const timeoutMs = (this.settings.imageGenerationTimeout || 120) * 1000;
       console.debug(
-        `AIris: Image generation timeout set to ${timeoutMs / 1000}s`,
+        `Lingxi: Image generation timeout set to ${timeoutMs / 1000}s`,
       );
       const { signal, cleanup } = createAbortSignalWithTimeout(
         timeoutMs,
@@ -207,7 +211,7 @@ export class GeminiProvider {
         cleanup();
       }
 
-      return this.parseGeminiImageResponse(data);
+      return parseGeminiImageResponse(data);
     } catch (error: unknown) {
       const errMsg = getErrorMessage(error);
       if (errMsg.startsWith("TIMEOUT:")) {
@@ -270,7 +274,7 @@ export class GeminiProvider {
           thinkingConfig.budgetTokens || 8192;
       }
       console.debug(
-        `AIris: [${this.providerName}] Multimodal Thinking config:`,
+        `Lingxi: [${this.providerName}] Multimodal Thinking config:`,
         JSON.stringify(genConfig.thinkingConfig),
       );
     }
@@ -280,7 +284,7 @@ export class GeminiProvider {
     }
 
     console.debug(
-      `AIris: [${this.providerName}] Sending multimodal chat request...`,
+      `Lingxi: [${this.providerName}] Sending multimodal chat request...`,
     );
 
     const requestParams: RequestUrlParam = {
@@ -293,154 +297,10 @@ export class GeminiProvider {
     try {
       const response = await requestUrl(requestParams);
       const data = response.json as GeminiResponse;
-      return this.extractTextAndThinkingFromResponse(data);
+      return extractTextAndThinkingFromResponse(data);
     } catch (error: unknown) {
       this.handleError(error);
     }
-  }
-
-  /**
-   * Extract text and thinking from response
-   */
-  private extractTextAndThinkingFromResponse(data: GeminiResponse): {
-    content: string;
-    thinking?: string;
-    thoughtSignature?: string;
-  } {
-    const candidates = data.candidates;
-    if (!candidates || candidates.length === 0) {
-      throw new Error("Gemini returned no candidates");
-    }
-
-    const parts = candidates[0]?.content?.parts;
-    if (!parts || parts.length === 0) {
-      throw new Error("Gemini returned no parts in response");
-    }
-
-    // Separate thinking and output parts
-    const thinkingParts = parts.filter((p: GeminiPart) => p.text && p.thought);
-    const outputParts = parts.filter((p: GeminiPart) => p.text && !p.thought);
-
-    const textPart =
-      outputParts.length > 0
-        ? outputParts[outputParts.length - 1]
-        : parts.find((p: GeminiPart) => p.text);
-
-    if (!textPart?.text) {
-      throw new Error("Gemini returned no text in response");
-    }
-
-    const thinking = thinkingParts.map((p) => p.text).join("");
-    // Extract thought signatures
-    const thoughtSignature = parts.find(
-      (p) => p.thoughtSignature,
-    )?.thoughtSignature;
-
-    console.debug(
-      `AIris: [${this.providerName}] Received response (thinking: ${
-        thinking.length > 0 ? "yes" : "no"
-      }, signature: ${thoughtSignature ? "yes" : "no"})`,
-    );
-
-    return {
-      content: textPart.text,
-      thinking: thinking || undefined,
-      thoughtSignature,
-    };
-  }
-
-  /**
-   * Legacy wrapper - extract text only (for backward compatibility)
-   */
-  private extractTextFromResponse(data: GeminiResponse): string {
-    return this.extractTextAndThinkingFromResponse(data).content;
-  }
-
-  private async parseGeminiImageResponse(
-    data: GeminiResponse,
-  ): Promise<string> {
-    const candidates = data.candidates;
-    if (!candidates || candidates.length === 0) {
-      throw new Error("Gemini returned no candidates");
-    }
-
-    const parts = candidates[0]?.content?.parts;
-    if (!parts || parts.length === 0) {
-      throw new Error("Gemini returned no parts in response");
-    }
-
-    // Find image part (skip thinking parts)
-    for (const part of parts) {
-      if (part.thought) continue;
-
-      // Check for inlineData (base64)
-      if (part.inlineData) {
-        const mimeType = part.inlineData.mimeType || "image/png";
-        const base64Data = part.inlineData.data;
-        console.debug(
-          "AIris: Gemini returned base64 image, mimeType:",
-          mimeType,
-        );
-        return `data:${mimeType};base64,${base64Data}`;
-      }
-
-      // Check for file_data (URL)
-      if (part.file_data) {
-        const url = part.file_data.file_uri;
-        console.debug("AIris: Gemini returned URL, fetching:", url);
-        return await this.fetchImageAsDataUrl(url);
-      }
-    }
-
-    // No image found
-    const outputParts = parts.filter((p: GeminiPart) => p.text && !p.thought);
-    const textPart =
-      outputParts.length > 0
-        ? outputParts[outputParts.length - 1]
-        : parts.find((p: GeminiPart) => p.text);
-    const textContent = textPart?.text || "No image returned";
-    throw new Error(`Image generation failed: ${textContent}`);
-  }
-
-  private async fetchImageAsDataUrl(url: string): Promise<string> {
-    try {
-      const response = await requestUrl({ url, method: "GET" });
-      const arrayBuffer = response.arrayBuffer;
-
-      let mimeType = "image/png";
-      const contentType = response.headers["content-type"];
-      if (contentType) {
-        mimeType = contentType.split(";")[0].trim();
-      } else if (url.includes(".jpg") || url.includes(".jpeg")) {
-        mimeType = "image/jpeg";
-      } else if (url.includes(".webp")) {
-        mimeType = "image/webp";
-      }
-
-      const uint8Array = new Uint8Array(arrayBuffer);
-      const base64Data = this.encodeBytesToBase64(uint8Array);
-
-      console.debug(
-        "AIris: Fetched image, mimeType:",
-        mimeType,
-        "size:",
-        arrayBuffer.byteLength,
-      );
-      return `data:${mimeType};base64,${base64Data}`;
-    } catch (error: unknown) {
-      throw new Error(`Failed to fetch image: ${getErrorMessage(error)}`);
-    }
-  }
-
-  private encodeBytesToBase64(bytes: Uint8Array): string {
-    if (bytes.length === 0) return "";
-    const chunkSize = 0x8000;
-    const parts: string[] = [];
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
-      parts.push(String.fromCharCode(...chunk));
-    }
-    return window.btoa(parts.join(""));
   }
 
   private handleError(error: unknown): never {
@@ -450,7 +310,7 @@ export class GeminiProvider {
         (errorBody as Record<string, Record<string, string>>).error?.message ||
         error.message;
       console.error(
-        `AIris: ${this.providerName} HTTP Error`,
+        `Lingxi: ${this.providerName} HTTP Error`,
         error.status,
         errorBody,
       );
@@ -506,7 +366,7 @@ export class GeminiProvider {
           thinkingConfig.budgetTokens || 8192;
       }
       console.debug(
-        `AIris: [${this.providerName}] Thinking config:`,
+        `Lingxi: [${this.providerName}] Thinking config:`,
         JSON.stringify(genConfig.thinkingConfig),
       );
     }
@@ -516,7 +376,7 @@ export class GeminiProvider {
     }
 
     console.debug(
-      `AIris: [${this.providerName}] Sending stream chat request...`,
+      `Lingxi: [${this.providerName}] Sending stream chat request...`,
     );
 
     try {
@@ -589,7 +449,7 @@ export class GeminiProvider {
         }
       }
     } catch (error) {
-      console.error(`AIris: ${this.providerName} Stream Error`, error);
+      console.error(`Lingxi: ${this.providerName} Stream Error`, error);
       throw error;
     }
   }

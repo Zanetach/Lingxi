@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目简介
 
-AIris — Obsidian 侧边栏 AI 生图插件。用户在 Markdown 笔记中选中文本/图片作为上下文，通过侧边栏触发多 AI 提供商图片生成，结果以 `![[embed]]` 形式插入笔记。
+Lingxi — Obsidian 侧边栏 AI 生图插件。用户在 Markdown 笔记中选中文本/图片作为上下文，通过侧边栏触发多 AI 提供商图片生成，结果以 `![[embed]]` 形式插入笔记。
 
 ## 语言
 - 使用中文回答和代码注释

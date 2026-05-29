@@ -26,6 +26,7 @@
     "exclude": [
         "node_modules",
         "docs",
-        "canvas_vault"
+        "canvas_vault",
+        "tests"
     ]
 }

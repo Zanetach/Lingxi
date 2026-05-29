@@ -4,11 +4,12 @@
  */
 
 import type { CanvasAISettings, ApiProvider } from "../settings/settings";
-import type { IProvider } from "./i-provider";
+import type { IProvider, ImageGenerationResult } from "./i-provider";
 import type { GeminiContent } from "./types";
 import { OpenRouterProvider } from "./providers/openrouter";
 import { GeminiProvider } from "./providers/gemini";
 import { OpenAIProvider } from "./providers/openai";
+import { CodexCliProvider } from "./providers/codex-cli";
 
 // Re-export types for backward compatibility
 export type {
@@ -35,6 +36,7 @@ export class ApiManager {
       ["openrouter", new OpenRouterProvider(settings)],
       ["openai", new OpenAIProvider(settings)],
       ["gemini", new GeminiProvider(settings)],
+      ["codex", new CodexCliProvider(settings)],
     ]);
   }
 
@@ -105,7 +107,7 @@ export class ApiManager {
     aspectRatio?: string,
     resolution?: string,
     abortSignal?: AbortSignal,
-  ): Promise<string> {
+  ): Promise<string | ImageGenerationResult> {
     if (!this.isConfigured()) {
       throw new Error(
         "API Key not configured. Please set it in plugin settings.",

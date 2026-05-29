@@ -1,10 +1,10 @@
 /**
- * AIris Plugin Settings
+ * Lingxi Plugin Settings
  * 设置接口、类型和默认值
  */
 
 // ========== API Provider Type ==========
-export type ApiProvider = "openrouter" | "openai" | "gemini";
+export type ApiProvider = "openrouter" | "openai" | "gemini" | "codex";
 
 // ========== Quick Switch Model ==========
 export interface QuickSwitchModel {
@@ -49,6 +49,11 @@ export interface CanvasAISettings {
   geminiUseCustomTextModel: boolean;
   geminiUseCustomImageModel: boolean;
 
+  // Codex CLI settings
+  codexCommand: string;
+  codexArgs: string;
+  codexWorkingDir: string;
+
   // Legacy fields (for migration)
   textModel?: string;
   imageModel?: string;
@@ -90,6 +95,15 @@ export interface CanvasAISettings {
 }
 
 // ========== Default Settings ==========
+export const DEFAULT_CODEX_ARGS = [
+  "exec",
+  "--skip-git-repo-check",
+  "--sandbox",
+  "workspace-write",
+  "--ephemeral",
+  "--ignore-rules",
+].join(" ");
+
 export const DEFAULT_SETTINGS: CanvasAISettings = {
   apiProvider: "openrouter",
 
@@ -113,6 +127,10 @@ export const DEFAULT_SETTINGS: CanvasAISettings = {
   geminiImageModel: "gemini-3-pro-image-preview",
   geminiUseCustomTextModel: false,
   geminiUseCustomImageModel: false,
+
+  codexCommand: "codex",
+  codexArgs: DEFAULT_CODEX_ARGS,
+  codexWorkingDir: "",
 
   imageCompressionQuality: 80,
   imageMaxSize: 2048,
@@ -155,6 +173,8 @@ export function getModelByProvider(
       return settings[`openAI${key}`];
     case "gemini":
       return settings[`gemini${key}`];
+    case "codex":
+      return "";
     default:
       return "";
   }
@@ -178,6 +198,8 @@ export function setModelByProvider(
     case "gemini":
       if (type === "text") settings.geminiTextModel = modelId;
       else settings.geminiImageModel = modelId;
+      break;
+    case "codex":
       break;
   }
 }

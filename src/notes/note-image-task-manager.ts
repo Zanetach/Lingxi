@@ -4,9 +4,10 @@
  * 仅负责任务编排与结果回传，不直接修改笔记内容
  */
 
-import { Notice, TFile } from "obsidian";
+import { FileSystemAdapter, Notice, TFile } from "obsidian";
 import { CanvasAISettings } from "../settings/settings";
 import { ApiManager } from "../api/api-manager";
+import type { ImageGenerationResult } from "../api/i-provider";
 import { t } from "../../lang/helpers";
 import type { App } from "obsidian";
 
@@ -41,6 +42,7 @@ export interface GeneratedImageCandidate {
   filePath: string;
   notePath: string;
   createdAt: number;
+  durationMs?: number;
   imageDataUrl: string;
 }
 
@@ -48,11 +50,13 @@ export class NoteImageTaskManager {
   private tasks: Map<string, ImageTask> = new Map();
   private taskCounter = 0;
   private settings: CanvasAISettings;
+  private app: App;
 
   // 用于检测 Edit 操作是否进行中
   private _isEditInProgress = false;
 
-  constructor(_app: App, settings: CanvasAISettings) {
+  constructor(app: App, settings: CanvasAISettings) {
+    this.app = app;
     this.settings = settings;
   }
 
@@ -155,13 +159,15 @@ export class NoteImageTaskManager {
 
       new Notice(t("Image generated"));
       const generatedAt = Date.now();
+      const normalizedResult = this.normalizeImageResult(result);
       return {
         taskId: taskNum,
-        fileName: `ai-generated-${generatedAt}.png`,
-        filePath: "",
+        fileName: normalizedResult.fileName || `ai-generated-${generatedAt}.png`,
+        filePath: normalizedResult.filePath,
         notePath: file.path,
         createdAt: generatedAt,
-        imageDataUrl: result,
+        durationMs: generatedAt - task.startTime,
+        imageDataUrl: normalizedResult.imageDataUrl,
       };
     } catch (e) {
       clearTimeout(task.timeoutId);
@@ -180,6 +186,34 @@ export class NoteImageTaskManager {
     } finally {
       this.tasks.delete(taskNum);
     }
+  }
+
+  private normalizeImageResult(
+    result: string | ImageGenerationResult,
+  ): { imageDataUrl: string; filePath: string; fileName: string } {
+    if (typeof result === "string") {
+      return { imageDataUrl: result, filePath: "", fileName: "" };
+    }
+
+    const filePath = this.toVaultRelativePath(result.localPath || "");
+    return {
+      imageDataUrl: result.imageDataUrl,
+      filePath,
+      fileName: filePath.split("/").pop() || "",
+    };
+  }
+
+  private toVaultRelativePath(localPath: string): string {
+    if (!localPath) return "";
+    const adapter = this.app.vault.adapter;
+    if (!(adapter instanceof FileSystemAdapter)) return "";
+
+    const vaultRoot = adapter.getBasePath();
+    const normalizedRoot = vaultRoot.replace(/\/+$/, "");
+    const normalizedPath = localPath.replace(/\/+$/, "");
+    if (normalizedPath === normalizedRoot) return "";
+    if (!normalizedPath.startsWith(normalizedRoot + "/")) return "";
+    return normalizedPath.slice(normalizedRoot.length + 1);
   }
 
   /**

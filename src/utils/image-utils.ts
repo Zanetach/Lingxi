@@ -4,6 +4,7 @@
 
 import { App, TFile, TFolder, Vault } from "obsidian";
 import type { CanvasAISettings } from "../settings/settings";
+import { assertSupportedImageBytes } from "./image-signature";
 
 /**
  * 生成唯一 ID
@@ -149,6 +150,7 @@ export async function saveImageToVault(
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i);
   }
+  assertSupportedImageBytes(bytes);
 
   await vault.createBinary(filePath, bytes.buffer);
   return { fileName, filePath };

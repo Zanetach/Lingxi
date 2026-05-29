@@ -1,13 +1,14 @@
 {
-  "name": "airis",
+  "name": "lingxi",
   "version": "0.3.2",
-  "description": "Sidebar AI image generation for Obsidian notes.",
+  "description": "Lingxi sidebar AI image generation for Obsidian notes.",
   "main": "main.js",
   "scripts": {
     "version-sync": "node version-bump.mjs",
     "dev": "npm run version-sync && node esbuild.config.mjs",
     "build": "npm run version-sync && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
     "lint": "eslint .",
+    "test": "node --experimental-strip-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/**/*.test.ts",
     "version": "npm run version-sync && git add manifest.json versions.json",
     "deploy:dev": "bash scripts/deploy-dev.sh"
   },
@@ -20,6 +21,7 @@
   "author": "Zane",
   "license": "MIT",
   "devDependencies": {
+    "@eslint-community/eslint-plugin-eslint-comments": "^4.7.2",
     "@eslint/eslintrc": "^3.3.3",
     "@types/node": "^16.11.6",
     "@typescript-eslint/eslint-plugin": "^8.50.0",

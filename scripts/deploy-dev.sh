@@ -2,7 +2,7 @@
 set -euo pipefail
 
 VAULT_PATH="${1:-${OBSIDIAN_VAULT_PATH:-}}"
-PLUGIN_ID="airis"
+PLUGIN_ID="lingxi"
 
 if [[ -z "${VAULT_PATH}" ]]; then
   echo "Usage: $0 <vault-path>"

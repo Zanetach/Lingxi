@@ -38,7 +38,7 @@ export interface IProvider {
     aspectRatio?: string,
     resolution?: string,
     abortSignal?: AbortSignal,
-  ): Promise<string>;
+  ): Promise<string | ImageGenerationResult>;
 
   multimodalChat(
     prompt: string,
@@ -51,4 +51,9 @@ export interface IProvider {
       level?: "MINIMAL" | "LOW" | "MEDIUM" | "HIGH";
     },
   ): Promise<{ content: string; thinking?: string }>;
+}
+
+export interface ImageGenerationResult {
+  imageDataUrl: string;
+  localPath?: string;
 }

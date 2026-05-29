@@ -2,12 +2,17 @@ import { Notice } from "obsidian";
 import type CanvasAIPlugin from "../../main";
 import type { GeneratedImageCandidate } from "./note-image-task-manager";
 import type { NotesSelectionContext } from "./notes-selection-handler";
+import type { SidebarCandidateManager } from "./sidebar-candidate-manager";
 import type {
-  SidebarCandidateManager,
   SidebarImageCandidate,
   SidebarInputImage,
   FailedGenerationTask,
-} from "./sidebar-candidate-manager";
+} from "./sidebar-candidate-types";
+import {
+  formatImageError,
+  isRetryableImageErrorCode,
+  normalizeImageError,
+} from "./sidebar-generation-errors";
 
 export interface GenerationQueueTask {
   prompt: string;
@@ -15,14 +20,6 @@ export interface GenerationQueueTask {
   sequence: number;
   inputImages: SidebarInputImage[];
 }
-
-type ImageErrorCode =
-  | "超时"
-  | "余额不足"
-  | "鉴权失败"
-  | "网络异常"
-  | "服务异常"
-  | "未知错误";
 
 export interface SidebarGenerationCallbacks {
   addMessage: (role: "user" | "assistant", content: string) => void;
@@ -135,7 +132,7 @@ export class SidebarGenerationQueue {
       fileName: this.tr("生成中...", "Generating..."),
       filePath: "",
       notePath:
-        (task.context as NotesSelectionContext | null)?.file?.path ||
+        task.context?.file?.path ||
         activeFile?.path ||
         "",
       createdAt: Date.now(),
@@ -226,10 +223,10 @@ export class SidebarGenerationQueue {
           break;
         } catch (error) {
           lastError = error;
-          const normalized = this.normalizeImageError(error);
+          const normalized = normalizeImageError(error, this.tr);
           const canRetry =
             attempt < maxAttempts &&
-            this.isRetryableErrorCode(normalized.code) &&
+            isRetryableImageErrorCode(normalized.code) &&
             !this.isSessionCanceled(sessionId);
           if (!canRetry) {
             break;
@@ -275,7 +272,7 @@ export class SidebarGenerationQueue {
       );
     } catch (e) {
       if (!this.isSessionCanceled(sessionId)) {
-        const msg = this.formatImageError(e);
+        const msg = formatImageError(e, this.tr);
         this.candidateManager.markPendingCandidateFailed(sessionId, sequence);
         this.callbacks.addMessage("assistant", msg);
         const failedTask: FailedGenerationTask = {
@@ -365,10 +362,6 @@ export class SidebarGenerationQueue {
     return Math.min(8000, base * 2 ** Math.max(0, retryIndex - 1));
   }
 
-  private isRetryableErrorCode(code: ImageErrorCode): boolean {
-    return code === "超时" || code === "网络异常" || code === "服务异常";
-  }
-
   private sleepWithSessionCancel(ms: number, sessionId: number): Promise<void> {
     if (ms <= 0 || this.isSessionCanceled(sessionId)) {
       return Promise.resolve();
@@ -382,153 +375,4 @@ export class SidebarGenerationQueue {
     });
   }
 
-  public normalizeImageError(rawError: unknown): {
-    code: ImageErrorCode;
-    message: string;
-    suggestion: string;
-  } {
-    const source =
-      rawError instanceof Error ? rawError.message : String(rawError || "");
-    const text = source.toLowerCase();
-
-    if (
-      text.includes("timeout") ||
-      text.includes("timed out") ||
-      text.includes("超时")
-    ) {
-      return {
-        code: "超时",
-        message: this.tr(
-          "请求超时，请稍后重试。",
-          "Request timed out. Please try again later.",
-        ),
-        suggestion: this.tr(
-          "可降低分辨率或切换更快的模型。",
-          "Try lowering resolution or using a faster model.",
-        ),
-      };
-    }
-
-    if (
-      text.includes("quota") ||
-      text.includes("insufficient") ||
-      text.includes("balance") ||
-      text.includes("credit") ||
-      text.includes("429") ||
-      text.includes("余额")
-    ) {
-      return {
-        code: "余额不足",
-        message: this.tr(
-          "账户额度或余额不足，无法继续生图。",
-          "Insufficient account quota/balance. Unable to continue generation.",
-        ),
-        suggestion: this.tr(
-          "请检查服务商余额、配额或账单状态。",
-          "Please check provider balance, quota, or billing status.",
-        ),
-      };
-    }
-
-    if (
-      text.includes("unauthorized") ||
-      text.includes("forbidden") ||
-      text.includes("api key") ||
-      text.includes("auth") ||
-      text.includes("401") ||
-      text.includes("403") ||
-      text.includes("密钥")
-    ) {
-      return {
-        code: "鉴权失败",
-        message: this.tr(
-          "API 鉴权失败，请检查密钥配置。",
-          "API authentication failed. Please check key settings.",
-        ),
-        suggestion: this.tr(
-          "确认 API Key、生图模型和 Provider 配置。",
-          "Confirm API key, image model, and provider configuration.",
-        ),
-      };
-    }
-
-    if (
-      text.includes("network") ||
-      text.includes("fetch") ||
-      text.includes("econn") ||
-      text.includes("socket") ||
-      text.includes("dns") ||
-      text.includes("连接")
-    ) {
-      return {
-        code: "网络异常",
-        message: this.tr(
-          "网络连接异常，暂时无法访问生图服务。",
-          "Network error. Unable to access image generation service.",
-        ),
-        suggestion: this.tr(
-          "请检查网络、代理或稍后重试。",
-          "Check network/proxy or retry later.",
-        ),
-      };
-    }
-
-    if (
-      text.includes("500") ||
-      text.includes("502") ||
-      text.includes("503") ||
-      text.includes("504") ||
-      text.includes("bad gateway") ||
-      text.includes("service unavailable") ||
-      text.includes("invalid request") ||
-      text.includes("provider")
-    ) {
-      return {
-        code: "服务异常",
-        message: this.tr(
-          "生图服务返回异常，请稍后重试。",
-          "Image service returned an error. Please retry later.",
-        ),
-        suggestion: this.tr(
-          "可切换模型或 Provider 再试。",
-          "Try switching model or provider.",
-        ),
-      };
-    }
-
-    return {
-      code: "未知错误",
-      message: this.tr(
-        "发生未知错误，当前任务未完成。",
-        "Unknown error. Current task did not complete.",
-      ),
-      suggestion: this.tr(
-        "可先重试失败项，或切换模型后再试。",
-        "Retry failed items first, or switch model and retry.",
-      ),
-    };
-  }
-
-  public formatImageError(rawError: unknown): string {
-    const normalized = this.normalizeImageError(rawError);
-    const codeLabel = this.tr(
-      normalized.code,
-      {
-        超时: "TIMEOUT",
-        余额不足: "INSUFFICIENT_BALANCE",
-        鉴权失败: "AUTH_FAILED",
-        网络异常: "NETWORK_ERROR",
-        服务异常: "SERVICE_ERROR",
-        未知错误: "UNKNOWN_ERROR",
-      }[normalized.code] || "UNKNOWN_ERROR",
-    );
-    return (
-      this.tr("错误码[", "Error[") +
-      codeLabel +
-      "] " +
-      normalized.message +
-      this.tr(" 建议：", " Suggestion: ") +
-      normalized.suggestion
-    );
-  }
 }

@@ -349,10 +349,10 @@
     background: linear-gradient(110deg, #9cf026 0%, #e3ff43 45%, #9cf026 100%);
     background-size: 220% 100%;
     color: #1a1a1a;
-    animation: banana-generate-flow 1.1s linear infinite;
+    animation: lingxi-generate-flow 1.1s linear infinite;
 }
 
-@keyframes banana-generate-flow {
+@keyframes lingxi-generate-flow {
     0% {
         background-position: 0% 0%;
     }
@@ -1156,6 +1156,9 @@
     border-radius: 8px;
     padding: 6px;
     background: var(--background-secondary);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
 }
 
 .sidebar-image-candidate-preview {
@@ -1314,6 +1317,21 @@
     background: color-mix(in srgb, #2f80ed 35%, var(--background-primary) 65%);
 }
 
+.sidebar-image-candidate-actions-overlay .candidate-btn-prompt {
+    background: color-mix(in srgb, #27ae60 22%, var(--background-primary) 78%);
+    border-color: color-mix(
+        in srgb,
+        #27ae60 48%,
+        var(--background-modifier-border) 52%
+    );
+    color: var(--text-normal);
+}
+
+.sidebar-image-candidate-actions-overlay
+    .candidate-btn-prompt:hover:not(:disabled) {
+    background: color-mix(in srgb, #27ae60 32%, var(--background-primary) 68%);
+}
+
 .sidebar-image-candidate-actions-overlay .candidate-btn-discard {
     background: color-mix(in srgb, #eb5757 24%, var(--background-primary) 76%);
     border-color: color-mix(
@@ -1355,6 +1373,38 @@
     grid-column: 1 / -1;
     width: 100%;
     pointer-events: none;
+}
+
+.sidebar-image-candidate-meta {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.sidebar-image-candidate-prompt {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-normal);
+    font-size: 11px;
+    line-height: 1.25;
+}
+
+.sidebar-image-candidate-detail {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    color: var(--text-faint);
+    font-size: 10px;
+    line-height: 1.2;
+}
+
+.sidebar-image-candidate-detail span {
+    padding: 1px 5px;
+    border-radius: 999px;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
 }
 
 /* ========== Sidebar Message Header (Removed) - Keeping commented out styles if needed later or just clean up ========== */
@@ -1716,7 +1766,7 @@
     filter: brightness(1.05);
 }
 
-/* ===== AIris Sidebar Layout ===== */
+/* ===== Lingxi Sidebar Layout ===== */
 .sidebar-studio-layout {
     position: sticky;
     bottom: 0;
@@ -2096,7 +2146,7 @@
     margin-left: 6px;
     border-radius: 50%;
     background: currentColor;
-    animation: banana-pulse 1s ease-in-out infinite;
+    animation: lingxi-pulse 1s ease-in-out infinite;
 }
 
 .sidebar-zone-2-mode-row {
@@ -2254,7 +2304,7 @@
     cursor: not-allowed;
 }
 
-@keyframes banana-pulse {
+@keyframes lingxi-pulse {
     0% {
         opacity: 0.35;
         transform: scale(0.8);

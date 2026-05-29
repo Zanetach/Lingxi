@@ -9,7 +9,6 @@ import {
   isHttpError,
   getErrorMessage,
   requestUrlWithTimeout,
-  createAbortSignalWithTimeout,
   isAbortError,
 } from "../utils";
 
@@ -175,7 +174,7 @@ export class OpenAIProvider {
     if (size) {
       body.size = size;
     }
-    console.debug("AIris [OpenAI] image request:", JSON.stringify({ model: body.model, size: body.size, quality: body.quality, promptLen: body.prompt.length, hasImage: !!body.image }));
+    console.debug("Lingxi [OpenAI] image request:", JSON.stringify({ model: body.model, size: body.size, quality: body.quality, promptLen: body.prompt.length, hasImage: !!body.image }));
     if (imagesWithRoles.length === 1) {
       body.image = `data:${imagesWithRoles[0].mimeType};base64,${imagesWithRoles[0].base64}`;
       body.input_fidelity = "high";
@@ -195,7 +194,7 @@ export class OpenAIProvider {
       | undefined;
     try {
       const t0 = Date.now();
-      console.debug("AIris [OpenAI] → sending request to:", this.getImageEndpoint());
+      console.debug("Lingxi [OpenAI] → sending request to:", this.getImageEndpoint());
       const res = await requestUrlWithTimeout(
         {
           url: this.getImageEndpoint(),
@@ -210,7 +209,7 @@ export class OpenAIProvider {
         timeoutMs,
         abortSignal,
       );
-      console.debug(`AIris [OpenAI] ← response: status=${res.status} elapsed=${Date.now() - t0}ms bodyLen=${res.text?.length}`);
+      console.debug(`Lingxi [OpenAI] ← response: status=${res.status} elapsed=${Date.now() - t0}ms bodyLen=${res.text?.length}`);
       if (res.status >= 400) {
         throw new Error(`OpenAI API Error (${res.status}): ${res.text}`);
       }
@@ -222,7 +221,7 @@ export class OpenAIProvider {
       if (isAbortError(error)) {
         throw new DOMException("Image generation aborted", "AbortError");
       }
-      console.error("AIris [OpenAI] generateImage error:", error);
+      console.error("Lingxi [OpenAI] generateImage error:", error);
       throw error;
     }
 

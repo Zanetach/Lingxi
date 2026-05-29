@@ -1,10 +1,12 @@
-import { Plugin } from "obsidian";
+import { addIcon, Plugin } from "obsidian";
 import { ApiManager } from "./src/api/api-manager";
+import { LINGXI_ICON_ID, LINGXI_ICON_SVG } from "./src/icons/lingxi-icon";
 import {
   ApiProvider,
   QuickSwitchModel,
   PromptPreset,
   CanvasAISettings,
+  DEFAULT_CODEX_ARGS,
   DEFAULT_SETTINGS,
 } from "./src/settings/settings";
 import { CanvasAISettingTab } from "./src/settings/settings-tab";
@@ -28,11 +30,12 @@ export default class CanvasAIPlugin extends Plugin {
   }
 
   async onload() {
-    console.debug("AIris: Plugin loading...");
+    console.debug("Lingxi: Plugin loading...");
 
     await this.loadSettings();
     this.migrateLegacySettings();
     await this.saveSettings();
+    addIcon(LINGXI_ICON_ID, LINGXI_ICON_SVG);
 
     this.addSettingTab(new CanvasAISettingTab(this.app, this));
 
@@ -45,29 +48,38 @@ export default class CanvasAIPlugin extends Plugin {
       (leaf) => new SideBarCoPilotView(leaf, this),
     );
 
-    const ribbonIcon = this.addRibbonIcon("eye", "AIris", () => {
+    const pluginName = "Lingxi";
+    const ribbonIcon = this.addRibbonIcon(LINGXI_ICON_ID, pluginName, () => {
       void this.toggleSidebarCoPilot();
     });
     ribbonIcon.parentElement?.appendChild(ribbonIcon);
 
-    console.debug("AIris: Plugin loaded");
+    console.debug("Lingxi: Plugin loaded");
   }
 
   onunload() {
-    console.debug("AIris: Plugin unloading...");
+    console.debug("Lingxi: Plugin unloading...");
     this.notesHandler?.destroy();
-    console.debug("AIris: Plugin unloaded");
+    console.debug("Lingxi: Plugin unloaded");
   }
 
   private migrateLegacySettings(): void {
+    const legacyCodexArgs =
+      "exec --skip-git-repo-check --sandbox workspace-write";
     const rawProvider = this.settings.apiProvider as string;
     const supportedProviders = new Set([
       "openrouter",
       "openai",
       "gemini",
+      "codex",
     ]);
     if (!supportedProviders.has(rawProvider)) {
       this.settings.apiProvider = "openrouter";
+    }
+
+    const currentCodexArgs = (this.settings.codexArgs || "").trim();
+    if (!currentCodexArgs || currentCodexArgs === legacyCodexArgs) {
+      this.settings.codexArgs = DEFAULT_CODEX_ARGS;
     }
 
     if (this.settings.textModel && !this.settings.openRouterTextModel) {
