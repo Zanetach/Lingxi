@@ -66,6 +66,8 @@ export default class CanvasAIPlugin extends Plugin {
   private migrateLegacySettings(): void {
     const legacyCodexArgs =
       "exec --skip-git-repo-check --sandbox workspace-write";
+    const previousDefaultCodexArgs =
+      "exec --skip-git-repo-check --sandbox workspace-write --ephemeral --ignore-rules";
     const rawProvider = this.settings.apiProvider as string;
     const supportedProviders = new Set([
       "openrouter",
@@ -78,7 +80,11 @@ export default class CanvasAIPlugin extends Plugin {
     }
 
     const currentCodexArgs = (this.settings.codexArgs || "").trim();
-    if (!currentCodexArgs || currentCodexArgs === legacyCodexArgs) {
+    if (
+      !currentCodexArgs ||
+      currentCodexArgs === legacyCodexArgs ||
+      currentCodexArgs === previousDefaultCodexArgs
+    ) {
       this.settings.codexArgs = DEFAULT_CODEX_ARGS;
     }
 

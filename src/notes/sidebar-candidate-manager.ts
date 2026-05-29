@@ -20,7 +20,7 @@ export class SidebarCandidateManager {
   private readonly candidateTtlMs = 24 * 60 * 60 * 1000;
   private candidateRenderRaf: number | null = null;
   private candidateViewportKey: string = "";
-  private readonly candidateGridMinWidth = 120;
+  private readonly candidateGridMinWidth = 170;
   private readonly candidateGridGap = 8;
   private readonly candidateVirtualOverscanRows = 2;
 
@@ -190,7 +190,7 @@ export class SidebarCandidateManager {
     );
     const itemWidth =
       (width - (columns - 1) * this.candidateGridGap) / Math.max(1, columns);
-    const rowHeight = Math.max(96, Math.ceil(itemWidth + 14));
+    const rowHeight = Math.max(112, Math.ceil(itemWidth * 0.75 + 12));
     const totalRows = Math.max(1, Math.ceil(total / columns));
     const viewportHeight = Math.max(1, this.candidateListEl.clientHeight);
     const scrollTop = this.candidateListEl.scrollTop;

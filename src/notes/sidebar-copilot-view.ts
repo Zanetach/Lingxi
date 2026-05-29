@@ -347,8 +347,8 @@ export class SideBarCoPilotView extends ItemView {
   private autoResizePromptInput(): void {
     if (!this.inputEl) return;
 
-    const minHeight = 120;
-    const maxHeight = 360;
+    const minHeight = 68;
+    const maxHeight = 160;
 
     this.inputEl.setCssProps({ height: "auto" });
     const next = Math.min(

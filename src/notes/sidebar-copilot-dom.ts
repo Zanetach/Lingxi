@@ -36,11 +36,8 @@ export interface SidebarCopilotDomElements {
 export function createSidebarCopilotDom(
   container: HTMLElement,
   tr: Translator,
-  imageTitle: string,
+  _imageTitle: string,
 ): SidebarCopilotDomElements {
-  const header = container.createDiv("sidebar-copilot-header");
-  header.createDiv({ cls: "sidebar-copilot-title", text: imageTitle });
-
   const candidateContainer = container.createDiv("sidebar-image-candidates");
   const candidateHeader = candidateContainer.createDiv(
     "sidebar-image-candidates-header",
@@ -61,13 +58,13 @@ export function createSidebarCopilotDom(
     "sidebar-image-candidates-list",
   );
 
-  const footer = container.createDiv(
+  const studio = container.createDiv(
     "canvas-ai-palette-footer sidebar-studio-layout",
   );
-  const zone1 = footer.createDiv("sidebar-zone-1");
-  const presetElements = createPresetSection(zone1, tr);
-  const parameterElements = createParameterSection(zone1, tr);
-  const zone2Elements = createPromptSection(footer, tr);
+  const promptElements = createPromptSection(studio, tr);
+  const parameterElements = createParameterSection(studio, tr);
+  const actionElements = createActionSection(studio, tr);
+  const presetElements = createPresetSection(studio, tr);
 
   return {
     candidateContainer,
@@ -76,7 +73,8 @@ export function createSidebarCopilotDom(
     retryFailedBtn,
     ...presetElements,
     ...parameterElements,
-    ...zone2Elements,
+    ...promptElements,
+    ...actionElements,
     messagesContainer: container.createDiv(
       "sidebar-image-log sidebar-image-log-hidden",
     ),
@@ -130,15 +128,6 @@ function createPresetSection(parent: HTMLElement, tr: Translator) {
 
 function createParameterSection(parent: HTMLElement, tr: Translator) {
   const paramsSection = parent.createDiv("sidebar-params-section");
-  paramsSection.createDiv({
-    cls: "sidebar-section-title",
-    text: tr("参数设置", "Parameters"),
-  });
-  paramsSection.createDiv({
-    cls: "sidebar-section-subtitle",
-    text: tr("模型 / 分辨率 / 长宽比", "Model / Resolution / Aspect Ratio"),
-  });
-
   const optionsRow = paramsSection.createDiv("canvas-ai-image-options");
   const imageModelSelect = createSelectGroup(optionsRow, tr("模型", "Model"), {
     cls: "canvas-ai-image-model-select",
@@ -187,7 +176,7 @@ function createPromptSection(parent: HTMLElement, tr: Translator) {
   const zone2Header = zone2.createDiv("sidebar-zone-2-header");
   zone2Header.createDiv({
     cls: "sidebar-section-title",
-    text: tr("自定义输入", "Custom Input"),
+    text: "Prompt",
   });
   const zone2Actions = zone2Header.createDiv("sidebar-zone-2-actions");
   const switchElements = createImageToImageSwitch(zone2Actions, tr);
@@ -198,7 +187,12 @@ function createPromptSection(parent: HTMLElement, tr: Translator) {
   });
   const imageElements = createImageToImagePanel(zone2, tr);
   const inputElements = createPromptInput(zone2, tr);
-  return { ...switchElements, generationStatusEl, ...imageElements, ...inputElements };
+  return {
+    ...switchElements,
+    generationStatusEl,
+    ...imageElements,
+    ...inputElements,
+  };
 }
 
 function createImageToImageSwitch(parent: HTMLElement, tr: Translator) {
@@ -292,7 +286,11 @@ function createPromptInput(parent: HTMLElement, tr: Translator) {
       rows: "3",
     },
   });
-  const actionCol = inputRow.createDiv("sidebar-zone-2-action-col");
+  return { inputEl };
+}
+
+function createActionSection(parent: HTMLElement, tr: Translator) {
+  const actionCol = parent.createDiv("sidebar-zone-2-action-col");
   const optimizePromptBtn = actionCol.createEl("button", {
     cls: "canvas-ai-optimize-btn sidebar-horizontal-optimize-btn",
     text: tr("优化", "Optimize"),
@@ -306,5 +304,5 @@ function createPromptInput(parent: HTMLElement, tr: Translator) {
     cls: "canvas-ai-cancel-btn sidebar-horizontal-cancel-btn",
     text: tr("取消", "Cancel"),
   });
-  return { inputEl, optimizePromptBtn, generateBtn, cancelBtn };
+  return { optimizePromptBtn, generateBtn, cancelBtn };
 }

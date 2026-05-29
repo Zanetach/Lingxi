@@ -100,8 +100,12 @@ export const DEFAULT_CODEX_ARGS = [
   "--skip-git-repo-check",
   "--sandbox",
   "workspace-write",
+  "--ask-for-approval",
+  "never",
   "--ephemeral",
   "--ignore-rules",
+  "-c",
+  "'model_reasoning_effort=\"low\"'",
 ].join(" ");
 
 export const DEFAULT_SETTINGS: CanvasAISettings = {

@@ -3,6 +3,7 @@ import type { CanvasAISettings } from "../../settings/settings";
 import { assertSupportedImageBytes } from "../../utils/image-signature";
 import type { ImageGenerationResult } from "../i-provider";
 import type { GeminiContent } from "../types";
+import { buildCodexCommandArgs } from "./codex-cli-args";
 
 type RequireLike = (id: string) => unknown;
 
@@ -26,6 +27,12 @@ interface SpawnedProcess {
 interface FsModule {
   promises: {
     readFile: (path: string) => Promise<Uint8Array>;
+    writeFile: (path: string, data: Uint8Array) => Promise<void>;
+    mkdir: (path: string, options: { recursive: boolean }) => Promise<void>;
+    rm: (
+      path: string,
+      options: { recursive: boolean; force: boolean },
+    ) => Promise<void>;
     access: (path: string) => Promise<void>;
   };
 }
@@ -33,7 +40,12 @@ interface FsModule {
 interface PathModule {
   extname: (path: string) => string;
   isAbsolute: (path: string) => boolean;
+  join: (...paths: string[]) => string;
   resolve: (...paths: string[]) => string;
+}
+
+interface OsModule {
+  tmpdir: () => string;
 }
 
 interface DataChunk {
@@ -85,6 +97,9 @@ export class CodexCliProvider {
     resolution?: string,
     abortSignal?: AbortSignal,
   ): Promise<ImageGenerationResult> {
+    const tempReferenceImages =
+      await this.writeReferenceImagesToTempFiles(imagesWithRoles);
+    const outputLastMessage = await this.createTempTextPath("last-message");
     const prompt = this.buildImagePrompt(
       instruction,
       imagesWithRoles,
@@ -92,8 +107,20 @@ export class CodexCliProvider {
       aspectRatio,
       resolution,
     );
-    const output = await this.runCodex(prompt, abortSignal);
-    return await this.extractImageResult(output);
+    try {
+      const output = await this.runCodex(
+        prompt,
+        abortSignal,
+        tempReferenceImages.paths,
+        outputLastMessage.path,
+      );
+      return await this.extractImageResult(
+        await this.readOutputLastMessage(outputLastMessage.path, output),
+      );
+    } finally {
+      await this.cleanupTempImageDir(tempReferenceImages.dir);
+      await this.cleanupTempImageDir(outputLastMessage.dir);
+    }
   }
 
   async multimodalChat(
@@ -114,6 +141,7 @@ export class CodexCliProvider {
       "Generate the requested image from the prompt.",
       "Return only one machine-readable image result: a data:image/...;base64,... URL, an absolute local image path, a file:// image URL, or a Markdown image link to a local image file.",
       "The returned result must point to a real PNG, JPEG, WebP, or GIF image with a valid image file header. Do not return placeholder bytes, random bytes, or a fake data URL.",
+      "Use available local tools or scripts when needed to create the image file. Keep the implementation direct and avoid long explanations.",
       "Do not add explanation before or after the image result.",
     ];
     const cwd = (this.settings.codexWorkingDir || "").trim();
@@ -136,7 +164,7 @@ export class CodexCliProvider {
     }
     if (imagesWithRoles.length > 0) {
       parts.push(
-        `[Reference images]\n${imagesWithRoles.length} reference image(s) were provided by the UI, but this Codex CLI bridge only passes text prompts. If exact image-to-image fidelity is required, use a native image provider.`,
+        `[Reference images]\n${imagesWithRoles.length} reference image(s) are attached to this Codex CLI run via --image. Use them as visual references for the generated image.`,
       );
     }
     parts.push(`[Instruction]\n${instruction}`);
@@ -146,6 +174,8 @@ export class CodexCliProvider {
   private async runCodex(
     prompt: string,
     abortSignal?: AbortSignal,
+    imagePaths: string[] = [],
+    outputLastMessagePath?: string,
   ): Promise<string> {
     if (!Platform.isDesktopApp) {
       throw new Error("Codex CLI provider is only available on desktop.");
@@ -153,29 +183,16 @@ export class CodexCliProvider {
 
     const command = (this.settings.codexCommand || "codex").trim();
     const cwd = (this.settings.codexWorkingDir || "").trim() || undefined;
-    const args = this.buildCodexArgs(this.settings.codexArgs || "exec", cwd);
+    const args = buildCodexCommandArgs(
+      this.settings.codexArgs || "exec",
+      cwd,
+      prompt,
+      imagePaths,
+      outputLastMessagePath,
+    );
     const timeoutMs = (this.settings.imageGenerationTimeout || 300) * 1000;
 
-    return await this.runCommand(command, [...args, prompt], cwd, timeoutMs, abortSignal);
-  }
-
-  private buildCodexArgs(raw: string, cwd: string | undefined): string[] {
-    const args = this.parseArgs(raw || "exec");
-    if (cwd && !this.hasCliOption(args, "--cd", "-C")) {
-      const insertAt = args[0] === "exec" ? 1 : args.length;
-      args.splice(insertAt, 0, "--cd", cwd);
-    }
-    return args;
-  }
-
-  private hasCliOption(args: string[], longName: string, shortName: string): boolean {
-    return args.some(
-      (arg) =>
-        arg === longName ||
-        arg.startsWith(`${longName}=`) ||
-        arg === shortName ||
-        arg.startsWith(`${shortName}=`),
-    );
+    return await this.runCommand(command, args, cwd, timeoutMs, abortSignal);
   }
 
   private async runCommand(
@@ -262,16 +279,6 @@ export class CodexCliProvider {
     return trimmed;
   }
 
-  private parseArgs(raw: string): string[] {
-    const args: string[] = [];
-    const pattern = /"([^"]*)"|'([^']*)'|[^\s]+/g;
-    let match: RegExpExecArray | null;
-    while ((match = pattern.exec(raw)) !== null) {
-      args.push(match[1] ?? match[2] ?? match[0]);
-    }
-    return args;
-  }
-
   private async extractImageResult(output: string): Promise<ImageGenerationResult> {
     const dataUrl = output.match(/data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+/);
     if (dataUrl) return { imageDataUrl: this.normalizeImageDataUrl(dataUrl[0]) };
@@ -340,6 +347,92 @@ export class CodexCliProvider {
     return `data:${mimeType};base64,${this.bytesToBase64(bytes)}`;
   }
 
+  private async writeReferenceImagesToTempFiles(
+    imagesWithRoles: { base64: string; mimeType: string; role: string }[],
+  ): Promise<{ dir: string | null; paths: string[] }> {
+    if (imagesWithRoles.length === 0) return { dir: null, paths: [] };
+
+    const fs = this.requireModule<FsModule>("fs");
+    const os = this.requireModule<OsModule>("os");
+    const path = this.requireModule<PathModule>("path");
+    const dir = path.join(
+      os.tmpdir(),
+      `lingxi-codex-images-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2)}`,
+    );
+    await fs.promises.mkdir(dir, { recursive: true });
+
+    const paths: string[] = [];
+    for (let index = 0; index < imagesWithRoles.length; index++) {
+      const image = imagesWithRoles[index];
+      const bytes = this.base64ToBytes(image.base64);
+      const detectedMimeType = assertSupportedImageBytes(bytes);
+      const extension = this.getImageExtension(
+        detectedMimeType || image.mimeType,
+      );
+      const filePath = path.join(dir, `reference-${index + 1}${extension}`);
+      await fs.promises.writeFile(filePath, bytes);
+      paths.push(filePath);
+    }
+    return { dir, paths };
+  }
+
+  private async createTempTextPath(
+    prefix: string,
+  ): Promise<{ dir: string; path: string }> {
+    const fs = this.requireModule<FsModule>("fs");
+    const os = this.requireModule<OsModule>("os");
+    const path = this.requireModule<PathModule>("path");
+    const dir = path.join(
+      os.tmpdir(),
+      `lingxi-codex-${prefix}-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2)}`,
+    );
+    await fs.promises.mkdir(dir, { recursive: true });
+    return { dir, path: path.join(dir, `${prefix}.txt`) };
+  }
+
+  private async readOutputLastMessage(
+    filePath: string,
+    fallback: string,
+  ): Promise<string> {
+    const fs = this.requireModule<FsModule>("fs");
+    try {
+      const bytes = await fs.promises.readFile(filePath);
+      const text = this.bytesToUtf8(bytes).trim();
+      return text || fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  private async cleanupTempImageDir(dir: string | null): Promise<void> {
+    if (!dir) return;
+    const fs = this.requireModule<FsModule>("fs");
+    try {
+      await fs.promises.rm(dir, { recursive: true, force: true });
+    } catch (error) {
+      console.warn("Lingxi: failed to clean Codex reference images", error);
+    }
+  }
+
+  private getImageExtension(mimeType: string): string {
+    switch (mimeType.toLowerCase()) {
+      case "image/jpeg":
+      case "image/jpg":
+        return ".jpg";
+      case "image/webp":
+        return ".webp";
+      case "image/gif":
+        return ".gif";
+      case "image/png":
+      default:
+        return ".png";
+    }
+  }
+
   private async fetchImageUrlAsDataUrl(url: string): Promise<string> {
     const response = await requestUrl({ url, method: "GET" });
     const bytes = new Uint8Array(response.arrayBuffer);
@@ -363,6 +456,17 @@ export class CodexCliProvider {
       binary += String.fromCharCode(bytes[i]);
     }
     return window.btoa(binary);
+  }
+
+  private bytesToUtf8(bytes: Uint8Array): string {
+    if (typeof TextDecoder !== "undefined") {
+      return new TextDecoder().decode(bytes);
+    }
+    let text = "";
+    for (let i = 0; i < bytes.length; i++) {
+      text += String.fromCharCode(bytes[i]);
+    }
+    return decodeURIComponent(escape(text));
   }
 
   private base64ToBytes(base64: string): Uint8Array {
